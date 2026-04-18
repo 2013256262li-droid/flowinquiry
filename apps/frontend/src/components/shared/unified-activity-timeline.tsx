@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 import { UserAvatar } from "@/components/shared/avatar-display";
 import RichTextEditor from "@/components/shared/rich-text-editor";
@@ -43,10 +43,7 @@ import { obfuscate } from "@/lib/endecode";
 import { useError } from "@/providers/error-provider";
 import { ActivityLogDTO } from "@/types/activity-logs";
 import { CommentDTO, EntityType } from "@/types/commons";
-import {
-  TransitionItemCollectionDTO,
-  TransitionItemDTO,
-} from "@/types/teams";
+import { TransitionItemDTO } from "@/types/teams";
 
 type ActivityType = "comment" | "field-change" | "state-transition";
 
@@ -61,6 +58,7 @@ interface UnifiedActivityItem {
   content: React.ReactNode;
   rawContent?: string;
   hasLongContent?: boolean;
+  isNew?: boolean;
 }
 
 type UnifiedActivityTimelineProps = {
@@ -82,35 +80,47 @@ const STATE_TRANSITION_BADGES: Record<string, string> = {
     "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400",
 };
 
-const ACTIVITY_TYPE_CONFIG: Record<ActivityType, { icon: React.ReactNode; color: string }> = {
+const ACTIVITY_TYPE_CONFIG: Record<
+  ActivityType,
+  { icon: React.ReactNode; color: string; label: string }
+> = {
   comment: {
     icon: <MessageSquare className="h-3 w-3" />,
     color: "border-blue-500 text-blue-500",
+    label: "评论",
   },
   "field-change": {
     icon: <Edit3 className="h-3 w-3" />,
     color: "border-amber-500 text-amber-500",
+    label: "变更",
   },
   "state-transition": {
     icon: <RefreshCw className="h-3 w-3" />,
     color: "border-emerald-500 text-emerald-500",
+    label: "状态",
   },
 };
 
 const CollapsibleContent: React.FC<{
   content: string;
   maxHeight?: number;
-}> = ({ content, maxHeight = 200 }) => {
+}> = ({ content, maxHeight = 180 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const contentRef = React.useRef<HTMLDivElement>(null);
   const [needsCollapse, setNeedsCollapse] = useState(false);
 
-  useEffect(() => {
+  const checkHeight = React.useCallback(() => {
     if (contentRef.current) {
       const scrollHeight = contentRef.current.scrollHeight;
       setNeedsCollapse(scrollHeight > maxHeight);
     }
-  }, [content, maxHeight]);
+  }, [maxHeight]);
+
+  useEffect(() => {
+    checkHeight();
+    const timer = setTimeout(checkHeight, 100);
+    return () => clearTimeout(timer);
+  }, [content, checkHeight]);
 
   return (
     <div className="relative">
@@ -125,13 +135,17 @@ const CollapsibleContent: React.FC<{
           "[&_th:nth-child(1)]:w-1/5",
           "[&_th:nth-child(2)]:w-2/5",
           "[&_th:nth-child(3)]:w-2/5",
-          "[&_td]:px-3 [&_td]:py-1.5 [&_td]:border [&_td]:border-border [&_td]:align-top [&_td]:wrap-break-word",
+          "[&_td]:px-3 [&_td]:py-1.5 [&_td]:border [&_td]:border-border [&_td]:align-top [&_td]:break-words",
           "[&_tbody_tr:nth-child(even)]:bg-muted/30",
           "[&_tbody_tr:hover]:bg-muted/50",
           "[&_td_p]:m-0 [&_td_p]:p-0",
-          !isExpanded && needsCollapse ? "max-h-48 overflow-hidden" : "",
+          "transition-all duration-300 ease-in-out",
         ].join(" ")}
-        style={!isExpanded && needsCollapse ? { maxHeight: `${maxHeight}px` } : {}}
+        style={
+          !isExpanded && needsCollapse
+            ? { maxHeight: `${maxHeight}px`, overflow: "hidden" }
+            : {}
+        }
         dangerouslySetInnerHTML={{
           __html: content.replace(
             /(<td[^>]*>)([\s\S]*?)(<\/td>)/g,
@@ -144,23 +158,30 @@ const CollapsibleContent: React.FC<{
         }}
       />
       {!isExpanded && needsCollapse && (
-        <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-background to-transparent pointer-events-none" />
+        <div
+          className="absolute left-0 right-0 h-16 pointer-events-none transition-opacity duration-300"
+          style={{
+            bottom: 0,
+            background:
+              "linear-gradient(to top, var(--background) 0%, transparent 100%)",
+          }}
+        />
       )}
       {needsCollapse && (
         <Button
           variant="ghost"
           size="sm"
-          className="mt-1 h-6 text-xs text-muted-foreground hover:text-foreground"
+          className="mt-1 h-6 text-xs text-muted-foreground hover:text-foreground transition-all duration-200"
           onClick={() => setIsExpanded(!isExpanded)}
         >
           {isExpanded ? (
             <>
-              <ChevronUp className="h-3 w-3 mr-1" />
+              <ChevronUp className="h-3 w-3 mr-1 transition-transform duration-200" />
               收起
             </>
           ) : (
             <>
-              <ChevronDown className="h-3 w-3 mr-1" />
+              <ChevronDown className="h-3 w-3 mr-1 transition-transform duration-200" />
               展开查看详情
             </>
           )}
@@ -198,11 +219,9 @@ const TimeDisplay: React.FC<{ date: Date | string }> = ({ date }) => {
             {label}
           </span>
         </TooltipTrigger>
-        <TooltipContent side="top" align="end">
-          <div className="text-xs">
-            <div className="font-medium">{full}</div>
-            <div className="text-muted-foreground">{relative}</div>
-          </div>
+        <TooltipContent side="top" align="end" className="text-xs">
+          <div className="font-medium">{full}</div>
+          <div className="text-muted-foreground">{relative}</div>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -236,13 +255,62 @@ const ActivityGroupHeader: React.FC<{ date: Date }> = ({ date }) => {
   return (
     <div className="flex items-center gap-2 my-3">
       <div className="flex-1 h-px bg-border" />
-      <span className="text-xs font-medium text-muted-foreground px-2 py-0.5 bg-muted/50 rounded-full">
+      <span className="text-xs font-medium text-muted-foreground px-2.5 py-0.5 bg-muted/50 rounded-full">
         {label}
       </span>
       <div className="flex-1 h-px bg-border" />
     </div>
   );
 };
+
+const LoadingSkeleton: React.FC = () => (
+  <div className="flex flex-col gap-4">
+    <div className="flex gap-3 items-start">
+      <div className="shrink-0 pt-1">
+        <Skeleton className="w-8 h-8 rounded-full" />
+      </div>
+      <div className="flex-1 space-y-2">
+        <Skeleton className="h-24 w-full rounded-lg" />
+        <div className="flex justify-end">
+          <Skeleton className="h-8 w-24 rounded" />
+        </div>
+      </div>
+    </div>
+    <div className="space-y-2">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div key={i} className="flex gap-3 animate-pulse">
+          <div className="flex flex-col items-center shrink-0">
+            <Skeleton className="w-6 h-6 rounded-full" />
+            {i < 2 && <div className="w-px flex-1 bg-border min-h-8" />}
+          </div>
+          <div className="flex-1 space-y-2 py-1">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-4 w-20 rounded" />
+              <Skeleton className="h-4 w-12 rounded" />
+              <div className="flex-1" />
+              <Skeleton className="h-3 w-16 rounded" />
+            </div>
+            <Skeleton className="h-16 w-full rounded-lg" />
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const EmptyState: React.FC = () => (
+  <div className="flex flex-col items-center justify-center py-16 gap-3 text-sm">
+    <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center">
+      <Clock className="h-8 w-8 text-muted-foreground/50" />
+    </div>
+    <div className="text-center">
+      <p className="font-medium text-foreground">暂无活动记录</p>
+      <p className="text-xs text-muted-foreground mt-1">
+        评论、状态变更和字段修改将显示在这里
+      </p>
+    </div>
+  </div>
+);
 
 const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = ({
   entityType,
@@ -251,12 +319,18 @@ const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = ({
   const { data: session } = useSession();
   const t = useAppClientTranslations();
   const { setError } = useError();
+  const timelineRef = useRef<HTMLDivElement>(null);
 
   const [comments, setComments] = useState<CommentDTO[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLogDTO[]>([]);
-  const [stateTransitions, setStateTransitions] = useState<TransitionItemDTO[]>([]);
+  const [stateTransitions, setStateTransitions] = useState<
+    TransitionItemDTO[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [unifiedItems, setUnifiedItems] = useState<UnifiedActivityItem[]>([]);
+  const [newlyAddedCommentId, setNewlyAddedCommentId] = useState<
+    string | null
+  >(null);
 
   const [newComment, setNewComment] = useState<string>("");
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -265,11 +339,12 @@ const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = ({
     const fetchAllData = async () => {
       setLoading(true);
       try {
-        const [commentsData, activityData, transitionsData] = await Promise.all([
-          getCommentsForEntity(entityType, entityId, setError),
-          getActivityLogs("Ticket", entityId, 1, 100, setError),
-          getTicketStateChangesHistory(entityId, setError),
-        ]);
+        const [commentsData, activityData, transitionsData] =
+          await Promise.all([
+            getCommentsForEntity(entityType, entityId, setError),
+            getActivityLogs("Ticket", entityId, 1, 100, setError),
+            getTicketStateChangesHistory(entityId, setError),
+          ]);
 
         setComments(commentsData || []);
         setActivityLogs(activityData?.content || []);
@@ -299,6 +374,7 @@ const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = ({
         actorImageUrl: comment.createdByImageUrl || "",
         content: null as unknown as React.ReactNode,
         rawContent: comment.content,
+        isNew: newlyAddedCommentId === `comment-${comment.id}`,
       });
     });
 
@@ -335,7 +411,7 @@ const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = ({
     items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
     setUnifiedItems(items);
-  }, [comments, activityLogs, stateTransitions, t]);
+  }, [comments, activityLogs, stateTransitions, t, newlyAddedCommentId]);
 
   const handleAddComment = async () => {
     if (!newComment.trim()) return;
@@ -351,15 +427,31 @@ const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = ({
       savedComment.createdByName =
         `${session?.user?.firstName ?? ""} ${session?.user?.lastName ?? ""}`.trim();
       savedComment.createdByImageUrl = session?.user?.imageUrl || "";
+
+      if (!savedComment.createdAt) {
+        savedComment.createdAt = new Date().toISOString();
+      }
+
+      const tempId = `comment-${savedComment.id || Date.now()}`;
+      setNewlyAddedCommentId(tempId);
+
       setComments((prev) => [savedComment, ...prev]);
       setNewComment("");
+
+      setTimeout(() => {
+        setNewlyAddedCommentId(null);
+      }, 3000);
     } finally {
       setSubmitting(false);
     }
   };
 
   const groupByDate = (items: UnifiedActivityItem[]) => {
-    const groups: { dateKey: string; date: Date; items: UnifiedActivityItem[] }[] = [];
+    const groups: {
+      dateKey: string;
+      date: Date;
+      items: UnifiedActivityItem[];
+    }[] = [];
 
     items.forEach((item) => {
       const date = item.timestamp;
@@ -381,40 +473,13 @@ const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = ({
   };
 
   if (loading) {
-    return (
-      <div className="flex flex-col gap-4">
-        <div className="flex gap-3 items-start">
-          <div className="shrink-0 pt-1">
-            <Skeleton className="w-8 h-8 rounded-full" />
-          </div>
-          <div className="flex-1 space-y-2">
-            <Skeleton className="h-24 w-full rounded-lg" />
-            <Skeleton className="h-8 w-24 rounded" />
-          </div>
-        </div>
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="flex gap-3 animate-pulse">
-            <div className="flex flex-col items-center shrink-0">
-              <Skeleton className="w-6 h-6 rounded-full" />
-              {i < 3 && <div className="w-px flex-1 bg-border min-h-8" />}
-            </div>
-            <div className="flex-1 space-y-1.5">
-              <div className="flex items-center gap-2">
-                <Skeleton className="h-3 w-24 rounded" />
-                <Skeleton className="h-3 w-16 rounded" />
-              </div>
-              <Skeleton className="h-12 w-full rounded" />
-            </div>
-          </div>
-        ))}
-      </div>
-    );
+    return <LoadingSkeleton />;
   }
 
   const groups = groupByDate(unifiedItems);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6" ref={timelineRef}>
       <div className="flex gap-3 items-start">
         <div className="shrink-0 pt-1">
           <UserAvatar imageUrl={session?.user?.imageUrl} size="w-8 h-8" />
@@ -429,6 +494,7 @@ const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = ({
               size="sm"
               onClick={handleAddComment}
               disabled={submitting || !newComment.trim()}
+              className="transition-all duration-200"
             >
               {submitting
                 ? t.common.buttons("submitting")
@@ -439,11 +505,7 @@ const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = ({
       </div>
 
       {groups.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 gap-2 text-sm text-muted-foreground">
-          <Clock className="h-10 w-10 opacity-30" />
-          <p className="font-medium">暂无活动记录</p>
-          <p className="text-xs">评论、状态变更和字段修改将显示在这里</p>
-        </div>
+        <EmptyState />
       ) : (
         <div className="relative">
           {groups.map((group) => (
@@ -455,6 +517,10 @@ const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = ({
                     key={item.id}
                     item={item}
                     isLast={itemIndex === group.items.length - 1}
+                    isAbsolutelyLast={
+                      group.dateKey === groups[groups.length - 1].dateKey &&
+                      itemIndex === group.items.length - 1
+                    }
                     session={session}
                     t={t as any}
                   />
@@ -471,24 +537,41 @@ const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = ({
 const ActivityItem: React.FC<{
   item: UnifiedActivityItem;
   isLast: boolean;
+  isAbsolutelyLast: boolean;
   session: any;
   t: any;
-}> = ({ item, isLast, session, t }) => {
+}> = ({ item, isLast, isAbsolutelyLast, session, t }) => {
   const config = ACTIVITY_TYPE_CONFIG[item.type];
+  const itemRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (item.isNew && itemRef.current) {
+      itemRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [item.isNew]);
 
   return (
-    <div className="relative flex gap-3 pl-9 py-3 group hover:bg-muted/30 transition-colors rounded-md -mx-2 px-2">
+    <div
+      ref={itemRef}
+      className={[
+        "relative flex gap-3 pl-9 py-3 group transition-all duration-300 rounded-md -mx-2 px-2",
+        item.isNew
+          ? "bg-primary/5 border-l-2 border-l-primary"
+          : "hover:bg-muted/30",
+      ].join(" ")}
+    >
       <div className="absolute left-0 top-3 z-10 flex flex-col items-center">
         <div
-          className={`
-            flex items-center justify-center w-6 h-6 rounded-full border-2 z-10
-            bg-background transition-colors
-            ${config.color}
-          `}
+          className={[
+            "flex items-center justify-center w-6 h-6 rounded-full border-2 z-10 bg-background transition-colors",
+            config.color,
+          ].join(" ")}
         >
           {config.icon}
         </div>
-        {!isLast && <div className="w-px flex-1 bg-border my-1 min-h-4" />}
+        {!isAbsolutelyLast && (
+          <div className="w-px flex-1 bg-border my-1 min-h-4" />
+        )}
       </div>
 
       <div className="min-w-0 flex-1">
@@ -528,12 +611,17 @@ const ActivityItem: React.FC<{
                   : "border-emerald-200 text-emerald-600 dark:border-emerald-800 dark:text-emerald-400",
             ].join(" ")}
           >
-            {item.type === "comment"
-              ? "评论"
-              : item.type === "field-change"
-                ? "变更"
-                : "状态"}
+            {config.label}
           </Badge>
+
+          {item.isNew && (
+            <Badge
+              variant="default"
+              className="text-xs px-1.5 py-0 h-5 bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 border-transparent animate-pulse"
+            >
+              新
+            </Badge>
+          )}
 
           <div className="ml-auto">
             <TimeDisplay date={item.timestamp} />
@@ -543,7 +631,12 @@ const ActivityItem: React.FC<{
         <div className="mt-1">
           {item.type === "comment" && item.rawContent && (
             <div
-              className="rounded-lg border bg-muted/30 px-4 py-3 text-sm prose prose-sm dark:prose-invert max-w-none group-hover:bg-muted/50 transition-colors"
+              className={[
+                "rounded-lg border bg-muted/30 px-4 py-3 text-sm prose prose-sm dark:prose-invert max-w-none transition-colors",
+                item.isNew
+                  ? "border-primary/30 bg-primary/5"
+                  : "group-hover:bg-muted/50",
+              ].join(" ")}
               dangerouslySetInnerHTML={{ __html: item.rawContent }}
             />
           )}
@@ -573,6 +666,8 @@ const StateTransitionContent: React.FC<{
     transition.status,
   );
 
+  const fromState = transition.fromState ? transition.fromState.trim() : "";
+
   return (
     <div className="space-y-1.5">
       <div className="flex flex-wrap items-center gap-2">
@@ -590,13 +685,17 @@ const StateTransitionContent: React.FC<{
       </div>
 
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Badge
-          variant="outline"
-          className="text-xs px-1.5 py-0 h-5 font-normal"
-        >
-          {transition.fromState || "—"}
-        </Badge>
-        <span className="text-muted-foreground/60">→</span>
+        {fromState ? (
+          <>
+            <Badge
+              variant="outline"
+              className="text-xs px-1.5 py-0 h-5 font-normal"
+            >
+              {fromState}
+            </Badge>
+            <span className="text-muted-foreground/60 mx-0.5">→</span>
+          </>
+        ) : null}
         <Badge
           variant="secondary"
           className="text-xs px-1.5 py-0 h-5 font-medium"
