@@ -109,3 +109,43 @@ export const formatDisplayDate = (
   const localDate = utcToLocalDate(date);
   return localDate ? format(localDate, formatStr) : "";
 };
+
+export const formatDateTimeFull = (date: Date | string | null | undefined): string => {
+  if (!date) return "Invalid date";
+
+  const dateObj = typeof date === "string" ? new Date(date) : date;
+  if (isNaN(dateObj.getTime())) return "Invalid date";
+
+  return dateObj.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+};
+
+export const isToday = (date: Date | string): boolean => {
+  const today = new Date();
+  const targetDate = typeof date === "string" ? new Date(date) : date;
+
+  return (
+    today.getFullYear() === targetDate.getFullYear() &&
+    today.getMonth() === targetDate.getMonth() &&
+    today.getDate() === targetDate.getDate()
+  );
+};
+
+export const isYesterday = (date: Date | string): boolean => {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const targetDate = typeof date === "string" ? new Date(date) : date;
+
+  return (
+    yesterday.getFullYear() === targetDate.getFullYear() &&
+    yesterday.getMonth() === targetDate.getMonth() &&
+    yesterday.getDate() === targetDate.getDate()
+  );
+};

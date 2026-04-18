@@ -17,14 +17,12 @@ import { useRouter } from "next/navigation";
 import React, { useEffect, useRef, useState } from "react";
 
 import AttachmentView from "@/components/shared/attachment-view";
-import AuditLogView from "@/components/shared/audit-log-view";
 import { UserAvatar } from "@/components/shared/avatar-display";
 import CollapsibleCard from "@/components/shared/collapsible-card";
-import CommentsView from "@/components/shared/comments-view";
 import EntityWatchers from "@/components/shared/entity-watchers";
+import UnifiedActivityTimeline from "@/components/shared/unified-activity-timeline";
 import TicketHealthLevelDisplay from "@/components/teams/ticket-health-level-display";
 import { TicketPriorityDisplay } from "@/components/teams/ticket-priority-display";
-import TicketTimelineHistory from "@/components/teams/ticket-timeline-history";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,7 +35,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Tooltip,
   TooltipContent,
@@ -84,7 +81,6 @@ const TicketDetailView = ({ ticketId }: { ticketId: number }) => {
   const teamRole = useUserTeamRole().role;
   const router = useRouter();
 
-  const [selectedTab, setSelectedTab] = useState("comments");
   const [ticket, setTicket] = useState<TicketDTO>({} as TicketDTO);
   const [loading, setLoading] = useState(true);
   const { setError } = useError();
@@ -94,7 +90,7 @@ const TicketDetailView = ({ ticketId }: { ticketId: number }) => {
   const [hasNext, setHasNext] = useState(true);
   const [isWorkflowDialogOpen, setWorkflowDialogOpen] = useState(false);
   const t = useAppClientTranslations();
-  const commentsViewRef = useRef<HTMLDivElement | null>(null);
+  const activityTimelineRef = useRef<HTMLDivElement | null>(null);
 
   const canEdit =
     PermissionUtils.canWrite(permissionLevel) ||
@@ -156,9 +152,8 @@ const TicketDetailView = ({ ticketId }: { ticketId: number }) => {
   };
 
   const handleFocusComments = () => {
-    setSelectedTab("comments");
     setTimeout(() => {
-      commentsViewRef.current?.scrollIntoView({
+      activityTimelineRef.current?.scrollIntoView({
         behavior: "smooth",
         block: "start",
       });
@@ -481,52 +476,19 @@ const TicketDetailView = ({ ticketId }: { ticketId: number }) => {
               </CardContent>
             </Card>
 
-            {/* Tabs card */}
-            <Card data-testid="ticket-tabs-card">
-              <Tabs
-                defaultValue="comments"
-                value={selectedTab}
-                onValueChange={setSelectedTab}
-              >
-                <CardHeader className="border-b pb-0 pt-4 px-4">
-                  <TabsList className="grid w-full grid-cols-3 bg-muted/50">
-                    <TabsTrigger
-                      value="comments"
-                      className="data-[state=active]:bg-background data-[state=active]:shadow-xs"
-                    >
-                      <MessageSquarePlus className="mr-2 h-4 w-4" />
-                      {t.teams.tickets.detail("comments")}
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="changes-history"
-                      className="data-[state=active]:bg-background data-[state=active]:shadow-xs"
-                    >
-                      <Clock className="mr-2 h-4 w-4" />
-                      {t.teams.tickets.detail("changes_history")}
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="timeline-history"
-                      className="data-[state=active]:bg-background data-[state=active]:shadow-xs"
-                    >
-                      <FileText className="mr-2 h-4 w-4" />
-                      {t.teams.tickets.detail("timeline")}
-                    </TabsTrigger>
-                  </TabsList>
-                </CardHeader>
-                <CardContent className="pt-4">
-                  <TabsContent value="comments">
-                    <div ref={commentsViewRef}>
-                      <CommentsView entityType="Ticket" entityId={ticket.id!} />
-                    </div>
-                  </TabsContent>
-                  <TabsContent value="changes-history">
-                    <AuditLogView entityType="Ticket" entityId={ticket.id!} />
-                  </TabsContent>
-                  <TabsContent value="timeline-history">
-                    <TicketTimelineHistory teamId={ticket.id!} />
-                  </TabsContent>
-                </CardContent>
-              </Tabs>
+            {/* Activity Timeline card */}
+            <Card data-testid="ticket-activity-card">
+              <CardHeader className="border-b pb-0 pt-4 px-4">
+                <CardTitle className="flex items-center gap-2 text-sm font-medium">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                  活动记录
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <div ref={activityTimelineRef}>
+                  <UnifiedActivityTimeline entityType="Ticket" entityId={ticket.id!} />
+                </div>
+              </CardContent>
             </Card>
           </div>
 
