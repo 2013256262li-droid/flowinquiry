@@ -13,6 +13,7 @@ import {
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import React, { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { UserAvatar } from "@/components/shared/avatar-display";
 import RichTextEditor from "@/components/shared/rich-text-editor";
@@ -22,7 +23,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useAppClientTranslations } from "@/hooks/use-translations";
@@ -440,9 +440,14 @@ const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = ({
       setComments((prev) => [savedComment, ...prev]);
       setNewComment("");
 
+      toast.success("评论发送成功");
+
       setTimeout(() => {
         setNewlyAddedCommentId(null);
       }, 3000);
+    } catch (error) {
+      toast.error("评论发送失败，请重试");
+      console.error("Failed to create comment:", error);
     } finally {
       setSubmitting(false);
     }
