@@ -212,19 +212,17 @@ const TimeDisplay: React.FC<{ date: Date | string }> = ({ date }) => {
   }
 
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="text-xs text-muted-foreground cursor-default hover:text-foreground transition-colors">
-            {label}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="top" align="end" className="text-xs">
-          <div className="font-medium">{full}</div>
-          <div className="text-muted-foreground">{relative}</div>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="text-xs text-muted-foreground cursor-default hover:text-foreground transition-colors">
+          {label}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" align="end" className="text-xs">
+        <div className="font-medium">{full}</div>
+        <div className="text-muted-foreground">{relative}</div>
+      </TooltipContent>
+    </Tooltip>
   );
 };
 
@@ -432,7 +430,11 @@ const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = ({
         savedComment.createdAt = new Date().toISOString();
       }
 
-      const tempId = `comment-${savedComment.id || Date.now()}`;
+      if (!savedComment.id) {
+        (savedComment as any).id = Date.now();
+      }
+
+      const tempId = `comment-${savedComment.id}`;
       setNewlyAddedCommentId(tempId);
 
       setComments((prev) => [savedComment, ...prev]);
@@ -517,10 +519,6 @@ const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = ({
                     key={item.id}
                     item={item}
                     isLast={itemIndex === group.items.length - 1}
-                    isAbsolutelyLast={
-                      group.dateKey === groups[groups.length - 1].dateKey &&
-                      itemIndex === group.items.length - 1
-                    }
                     session={session}
                     t={t as any}
                   />
@@ -537,16 +535,23 @@ const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = ({
 const ActivityItem: React.FC<{
   item: UnifiedActivityItem;
   isLast: boolean;
-  isAbsolutelyLast: boolean;
   session: any;
   t: any;
-}> = ({ item, isLast, isAbsolutelyLast, session, t }) => {
+}> = ({ item, isLast, session, t }) => {
   const config = ACTIVITY_TYPE_CONFIG[item.type];
   const itemRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (item.isNew && itemRef.current) {
-      itemRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      const rect = itemRef.current.getBoundingClientRect();
+      const isInViewport =
+        rect.top >= 0 &&
+        rect.bottom <=
+          (window.innerHeight || document.documentElement.clientHeight);
+
+      if (!isInViewport) {
+        itemRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
     }
   }, [item.isNew]);
 
@@ -554,10 +559,10 @@ const ActivityItem: React.FC<{
     <div
       ref={itemRef}
       className={[
-        "relative flex gap-3 pl-9 py-3 group transition-all duration-300 rounded-md -mx-2 px-2",
+        "relative flex gap-3 pl-9 py-3 group transition-all duration-300 rounded-md -mx-2 px-2 border-l-2",
         item.isNew
-          ? "bg-primary/5 border-l-2 border-l-primary"
-          : "hover:bg-muted/30",
+          ? "bg-primary/5 border-l-primary"
+          : "border-l-transparent hover:bg-muted/30",
       ].join(" ")}
     >
       <div className="absolute left-0 top-3 z-10 flex flex-col items-center">
@@ -569,7 +574,7 @@ const ActivityItem: React.FC<{
         >
           {config.icon}
         </div>
-        {!isAbsolutelyLast && (
+        {!isLast && (
           <div className="w-px flex-1 bg-border my-1 min-h-4" />
         )}
       </div>
@@ -708,19 +713,17 @@ const StateTransitionContent: React.FC<{
         <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
           <Clock className="h-3 w-3 shrink-0" />
           <span>{t.teams?.tickets?.timeline?.("sla_due") || "SLA 到期"}:</span>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="cursor-pointer text-red-500 dark:text-red-400 font-medium hover:underline underline-offset-2">
-                  {formatDateTime(new Date(transition.slaDueDate))}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                {t.teams?.tickets?.timeline?.("sla_deadline") || "SLA 截止时间"}:{" "}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="cursor-pointer text-red-500 dark:text-red-400 font-medium hover:underline underline-offset-2">
                 {formatDateTime(new Date(transition.slaDueDate))}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              {t.teams?.tickets?.timeline?.("sla_deadline") || "SLA 截止时间"}:{" "}
+              {formatDateTime(new Date(transition.slaDueDate))}
+            </TooltipContent>
+          </Tooltip>
         </div>
       )}
     </div>
